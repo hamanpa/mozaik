@@ -9,6 +9,7 @@ from neo.core.block import Block
 import mozaik
 from mozaik.core import ParametrizedObject
 from .neo_neurotools_wrapper import MozaikSegment, PickledDataStoreNeoWrapper
+from mozaik.analysis.data_structures import Connections
 from mozaik.tools.mozaik_parametrized import  MozaikParametrized,filter_query
 import pickle
 from collections import OrderedDict
@@ -608,6 +609,10 @@ class PickledDataStore(Hdf5DataStore):
         if os.path.isfile(self.parameters.root_directory + '/datastore.analysis.pickle'):
             f = open(self.parameters.root_directory + '/datastore.analysis.pickle', 'rb')
             self.analysis_results = pickle.load(f)
+            for result in self.analysis_results:
+                if type(result) == Connections:
+                    result.datastore_path = self.parameters.root_directory
+                    result.full = False
         else:
             self.analysis_results = []
         

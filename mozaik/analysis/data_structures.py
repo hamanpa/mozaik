@@ -6,6 +6,7 @@ For more documentation refer to `mozaik.analysis`_
 
 import mozaik
 import numpy
+import pickle
 from mozaik.tools.mozaik_parametrized import MozaikParametrized, SNumber, SInteger, SString
 logger = mozaik.getMozaikLogger()
 
@@ -17,6 +18,7 @@ class AnalysisDataStructure(MozaikParametrized):
 
     The four parameters that are common to all AnalysisDataStructure classes are `identified`, `analysis_algorithm`, `neuron`, `sheet_name` and `stimulus_id`.
     """
+    # TODO: Update the doc string about the datastore_path
 
     identifier = SString(doc="The identifier of the analysis data structure")
     analysis_algorithm = SString(doc="The identifier of the analysis data structure")
@@ -27,6 +29,8 @@ class AnalysisDataStructure(MozaikParametrized):
                               doc="The sheet for which this results were computed. None if they do not belong to specific sheet")
     stimulus_id = SString(default=None,
                                doc="The stimulus for which the results were computed. None if they are not related to specific stimulus")
+    datastore_path = SString(default=None,
+                               doc="The path to the root directory where the datatore is saved")
 
     def __init__(self,tags=[], **params):
         MozaikParametrized.__init__(self, **params)
@@ -508,6 +512,7 @@ class Connections(AnalysisDataStructure):
             List of tuples (i,j,d) where i is index of pre-synaptic neuron in sheet source_name and j is index of post-synaptic neuron in sheet target_name, and d is the delay.
     
     """
+    # TODO: Update docstring about the lazyloading setup
 
     proj_name = SString(doc="Projection name.")
     source_name = SString(doc="The name of the source sheet.")
@@ -515,7 +520,41 @@ class Connections(AnalysisDataStructure):
 
     def __init__(self, weights, delays, source_size, target_size, **params):
         AnalysisDataStructure.__init__(self, identifier='Connections', **params)
-        self.weights = numpy.array(weights)[:,:]
-        self.delays =  numpy.array(delays)[:,:]
         self.source_size = source_size
         self.target_size = target_size
+
+        data = {
+            'weights' : numpy.array(weights)[:,:],
+            'delays' : numpy.array(delays)[:,:]
+        }
+        f = open(self.datastore_path + '/' + self.proj_name + ".pickle", 'wb')
+        pickle.dump(data, f)
+        f.close()
+        self.full = False
+
+    def load_full(self):
+        f = open(self.datastore_path + '/' + self.proj_name + ".pickle", 'rb')
+        data = pickle.load(f)
+        f.close()
+        self.weights = data['weights']
+        self.delays = data['delays']
+        self.full = True
+
+    def __getstate__(self):
+        result = self.__dict__.copy()
+        if self.full:
+            del result['weights']
+            del result['delays']
+        return result
+    
+    def release(self):
+        self.full = False
+        del self.weights
+        del self.delays
+
+    def __getattr__(self, attr):
+        if attr in ['weights', 'delays']:
+            self.load_full()
+            return getattr(self, attr)
+        else:
+            raise AttributeError

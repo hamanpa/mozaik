@@ -44,6 +44,7 @@ class Connector(BaseComponent):
         self.target = target
         self.input = source
         self.target.input = self
+        self.cl = None
         
         self.weight_scaler = 1.0 # This scaler has to be always applied to all weights just before sent to pyNN connect command
                                  # This is because certain pyNN synaptic models interpret weights with different units and the Connector
@@ -91,20 +92,61 @@ class Connector(BaseComponent):
 
     def store_connections(self, datastore):
         from mozaik.analysis.data_structures import Connections
-        
-        weights = self.proj.get('weight', format='list', gather=True)
-        delays = self.proj.get('delay', format='list', gather=True)
-        datastore.add_analysis_result(
-            Connections(weights,delays,
-                        source_size=(self.source.size_x,self.source.size_y),
-                        target_size=(self.target.size_x,self.target.size_y),
-                        proj_name=self.name,
-                        source_name=self.source.name,
-                        target_name=self.target.name,
-                        analysis_algorithm='connection storage'))
+        # TODO: write docstring that this method is obsolete and is left for
+        # compatibility reasons - should not be accessed directly, only for 
+        # certail connections created within PyNN, where the connection list
+        # is not available
+
+        data = self.proj.get(['weight', 'delay'], format='list', gather=True)
+        data = numpy.array(data)
+        weights, delays = data[:,[0,1,2]], data[:,[0,1,3]]
+
+        if (not mozaik.mpi_comm) or (mozaik.mpi_comm.rank == mozaik.MPI_ROOT):
+            datastore.add_analysis_result(
+                Connections(
+                            weights,delays,
+                            source_size=(self.source.size_x,self.source.size_y),
+                            target_size=(self.target.size_x,self.target.size_y),
+                            proj_name=self.name,
+                            source_name=self.source.name,
+                            target_name=self.target.name,
+                            analysis_algorithm='connection storage',
+                            datastore_path=datastore.parameters.root_directory))
 
 
-class SpecificArborization(Connector):
+
+class SpecificConnector(Connector):
+    """
+    An abstract class for Connectors with connections specified by a given connection list.
+
+    This class implements _connect function based on the given connection list, therefore every derived SpecificConnector class should implement _obtain_connection_list method, which reutrns a connection list.
+     
+    Connection list should be in the form of list of tuples (or equivalent two dimensional numpy array). Each tuple represents a single connection and should look like: (pre_idx, post_idx, weight, delay), where 'pre_idx' is the index (i.e. order in the Population, not the ID) of presynaptic neuron, 'post_idx' is the index of postsynaptic neuron, 'weight' is the weight of the connection and 'delay' is the delay of the synaptic transmission.
+    """
+
+
+    def _connect(self):
+        conn_list = self._obtain_connection_list()
+        method = self.sim.FromListConnector(conn_list)
+        if len(conn_list) > 0:
+            if self.model.parameters.store_connections:
+                self.cl = method.conn_list
+            self.proj = self.sim.Projection(
+                                self.source.pop,
+                                self.target.pop,
+                                method,
+                                synapse_type=self.init_synaptic_mechanisms(),
+                                label=self.name,
+                                receptor_type=self.parameters.target_synapses)
+        else:
+            logger.warning("%s(%s): empty projection - pyNN projection not created." % (self.name,self.__class__.__name__))
+
+    
+    def _obtain_connection_list(self):
+        raise NotImplementedError
+
+
+class SpecificArborization(SpecificConnector):
     """
     Generic connector which gets directly list of connections as the list of
     quadruplets as accepted by the pyNN FromListConnector.
@@ -125,7 +167,7 @@ class SpecificArborization(Connector):
         self.connection_matrix = connection_matrix
         self.delay_matrix = delay_matrix
 
-    def _connect(self):
+    def _obtain_connection_list(self):
         X = numpy.zeros(self.connection_matrix.shape)
         Y = numpy.zeros(self.connection_matrix.shape)
         
@@ -144,18 +186,11 @@ class SpecificArborization(Connector):
         # get rid of very weak synapses
         z = numpy.max(self.connection_matrix.flatten())
         self.connection_list = [(int(a),int(b),c,d) for (a,b,c,d) in self.connection_list if c>(z/100.0)]
-        method = self.sim.FromListConnector(self.connection_list)
-        self.proj = self.sim.Projection(
-                                self.source.pop,
-                                self.target.pop,
-                                method,
-                                synapse_type=self.init_synaptic_mechanisms(),
-                                label=self.name,
-                                rng=None,
-                                receptor_type=self.parameters.target_synapses)
+
+        return self.connection_list
 
 
-class SpecificProbabilisticArborization(Connector):
+class SpecificProbabilisticArborization(SpecificConnector):
     """
     Generic connector which gets directly list of connections as the list
     of quadruplets as accepted by the pyNN FromListConnector.
@@ -183,7 +218,7 @@ class SpecificProbabilisticArborization(Connector):
         self.connection_matrix = connection_matrix
         self.delay_matrix = delay_matrix
 
-    def _connect(self):
+    def _obtain_connection_list(self):
         # This is due to native synapses models (which we currently use as the short term synaptic plasticity model) 
         # do not apply the 1000 factor scaler as the pyNN synaptic models
         wf = self.parameters.weight_factor * self.weight_scaler
@@ -199,15 +234,4 @@ class SpecificProbabilisticArborization(Connector):
             )
             cl.extend([(int(k),int(i),wf*co[k]/self.parameters.num_samples,delays[k][i]) for k in co.keys()])
             
-        method = self.sim.FromListConnector(cl)
-        
-        self.proj = self.sim.Projection(
-                                self.source.pop,
-                                self.target.pop,
-                                method,
-                                synapse_type=self.init_synaptic_mechanisms(),
-                                label=self.name,
-                                receptor_type=self.parameters.target_synapses)
-                  
-
-
+        return cl

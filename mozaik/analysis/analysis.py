@@ -75,7 +75,7 @@ class Analysis(ParametrizedObject):
         self.perform_analysis()
         t2 = time.time()
         logger.warning(self.__class__.__name__ + ' analysis took: '
-                       + str(t2-t1) + 'seconds')
+                       + str(t2-t1) + ' seconds')
 
     def perform_analysis(self):
         """

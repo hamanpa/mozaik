@@ -227,6 +227,9 @@ def run_experiments(model,experiment_list,parameters,load_from=None):
         data_store = PickledDataStore(load=True,
                                       parameters=MozaikExtendedParameterSet({'root_directory': load_from,'store_stimuli' : parameters.store_stimuli}))
     
+    if parameters.store_connections:
+        model.store_connections(data_store)
+
     data_store.set_neuron_ids(model.neuron_ids())
     data_store.set_neuron_positions(model.neuron_positions())
     data_store.set_neuron_annotations(model.neuron_annotations())

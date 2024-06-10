@@ -67,6 +67,7 @@ class Model(BaseComponent):
         'name': str,
         'results_dir': str,
         'store_stimuli' : bool,
+        'store_connections' : bool,
         'reset': bool,
         'null_stimulus_period': float,
         'input_space': ParameterSet, # can be none - in which case input_space_type is ignored
@@ -297,3 +298,47 @@ class Model(BaseComponent):
         for s in self.sheets.values():
             neuron_annotations[s.name] = s.get_neuron_annotations()
         return neuron_annotations
+
+    def store_connections(self, datastore):
+        """
+        Stores connections from each connector, defined in the model, into the
+        datastore. It checks if mozaik precomputed connnections are available
+        and stores them, if the connections are obtained from PyNN.
+        """
+        from mozaik.analysis.data_structures import Connections
+        from mpi4py import MPI
+
+        for connector in self.connectors.values():
+            if (connector.cl is not None) and len(connector.cl) > 0:
+                if mozaik.mpi_comm:
+                    size = connector.cl.size
+                    sizes = mozaik.mpi_comm.gather(size, root=mozaik.MPI_ROOT) or []
+                    displacements = [sum(sizes[:i]) for i in range(len(sizes))]
+                    connections = numpy.empty(sum(sizes))
+                    mozaik.mpi_comm.Gatherv(
+                        [connector.cl.flatten(), size, MPI.DOUBLE],  
+                        [connections, (sizes, displacements), MPI.DOUBLE],
+                        root=mozaik.MPI_ROOT)
+                else:
+                    connections = connector.cl
+
+                if (not mozaik.mpi_comm) or (mozaik.mpi_comm.rank == mozaik.MPI_ROOT):
+                    connections = connections.reshape(-1,4)
+
+                    connections[:,2] = connections[:,2]/connector.weight_scaler
+
+                    weights, delays = connections[:,[0,1,2]], connections[:,[0,1,3]]
+                    datastore.add_analysis_result(
+                        Connections(
+                                    weights,delays,
+                                    source_size=(connector.source.size_x,connector.source.size_y),
+                                    target_size=(connector.target.size_x,connector.target.size_y),
+                                    proj_name=connector.name,
+                                    source_name=connector.source.name,
+                                    target_name=connector.target.name,
+                                    analysis_algorithm='connection storage',
+                                    datastore_path=datastore.parameters.root_directory))
+                connector.cl = None
+            else:
+                logger.warning(f"Connection list for {connector.name} does not exist. Using PyNN to retrieve connections")
+                connector.store_connections(datastore)
