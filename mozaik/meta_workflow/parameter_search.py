@@ -139,7 +139,8 @@ class ParameterSearch(object):
     ----------
     params : ParameterSearchBackend
            The job execution backend to use. 
-           
+    simulation_run_name : str, optional
+            The name of the simulation run, saved in "sim_info.json"
            
     Examples
     --------
@@ -148,8 +149,9 @@ class ParameterSearch(object):
     >>> parameter_search_script simulation_run_script simulator_name path_to_root_parameter_file
     """
     
-    def __init__(self,backend):
+    def __init__(self,backend, simulation_run_name='ParameterSearch'):
         self.backend = backend
+        self.simulation_run_name = simulation_run_name
     
     def generate_parameter_combinations(self):
         """
@@ -189,7 +191,7 @@ class ParameterSearch(object):
         
         for combination in combinations:
             combination['results_dir']='\"\'' + os.getcwd() + '/' + mdn + '/\'\"'
-            self.backend.execute_job(run_script,simulator_name,parameters_url,combination,'ParameterSearch')
+            self.backend.execute_job(run_script,simulator_name,parameters_url,combination,self.simulation_run_name)
             counter = counter + 1
             
         print("Submitted %d jobs." % counter)
@@ -205,8 +207,8 @@ class CombinationParameterSearch(ParameterSearch):
     parameter_values : dict
                       Dictionary containing parameter names as keys, and lists as values, each corresponding to the list of values to test for the given parameter.
     """
-    def __init__(self,backend,parameter_values):
-        ParameterSearch.__init__(self,backend)
+    def __init__(self,backend,parameter_values,simulation_run_name='ParameterSearch'):
+        ParameterSearch.__init__(self,backend,simulation_run_name)
         self.parameter_values = parameter_values
     
     def generate_parameter_combinations(self):

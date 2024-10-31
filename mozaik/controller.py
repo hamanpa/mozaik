@@ -147,7 +147,7 @@ def prepare_workflow(simulation_name, model_class):
             'run_date': datetime.now().strftime('%d/%m/%Y-%H:%M:%S'),
             'simulation_run_name': simulation_run_name,
             'model_name': simulation_name,
-            "model_description": model_class.__doc__,
+            "model_description": model_class.__doc__ or "None",
             'results': {"$ref": "results.json"},
             'stimuli': {"$ref": "stimuli.json"},
             'recorders': {"$ref": "recorders.json"},

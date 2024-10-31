@@ -125,7 +125,7 @@ And, finally, Mozaik::
     
     git clone https://github.com/CSNG-MFF/mozaik.git
     cd mozaik
-    python setup.py install
+    pip install .
     
 
 .. _ref-run:
